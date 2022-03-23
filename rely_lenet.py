@@ -1,0 +1,21 @@
+def get_LeNet(batch_size=batch_size, img_shape=(1, 28, 28), dtype="float32"):
+    data_shape = (batch_size,) + img_shape
+    data = relay.var("data", shape=data_shape, dtype=dtype)
+    conv1_bias = relay.var("conv1_bias")
+    conv1 = layers.conv2d(data, kernel_size=(3, 3), strides=(1, 1), padding=(1, 1), channels=6, name="conv1")
+    conv1 = relay.nn.bias_add(conv1, conv1_bias)
+    maxpool1 = relay.nn.max_pool2d(conv1, (2, 2), (2, 2))
+    conv2_bias = relay.var("conv2_bias")
+    conv2 = layers.conv2d(maxpool1, kernel_size=(5, 5), strides=(1, 1), padding=(0, 0), channels=16, name="conv2")
+    conv2 = relay.nn.bias_add(conv2, conv2_bias)
+    maxpool2 = relay.nn.max_pool2d(conv2, (2, 2), (2, 2))
+    bf1 = relay.nn.batch_flatten(maxpool2)
+    dense1 = layers.dense_without_bias(bf1, units=120, name="dense1")
+    dense2 = layers.dense_without_bias(dense1, units=84, name="dense2")
+    dense3 = layers.dense_without_bias(dense2, units=10, name="dense3")
+    softmax = relay.nn.softmax(dense3)
+    #label is from input
+    label = relay.var("data2", shape=(batch_size, 10), dtype=dtype)
+    loss = relay.nn.cross_entropy(softmax, label)
+    args = relay.analysis.free_vars(loss)
+    return relay.Function(args, loss) 
