@@ -48,7 +48,10 @@ s[b_buf].set_scope(env.acc_scope)  # SRAM
 s[b_buf].pragma(b_buf.op.axis[0], env.alu)  # compute
 s[res].pragma(res.op.axis[0], env.dma_copy)  # SRAM->DRAM
 # build
-with vta.build_config():
+print(vta.lower(s, [a, res], simple_mode=True))
+
+print("===================vta.build=================================")
+with vta.build_config(debug_flag=2):
 	mod = vta.build(s, [a, res], tvm.target.Target("ext_dev", host=env.target_host))
 temp = utils.tempdir()
 mod.save(temp.relpath("load_act.o"))
@@ -66,6 +69,7 @@ res_nd = tvm.nd.array(np.zeros((m, n, env.BATCH, env.BLOCK_OUT)).astype(res.dtyp
 if env.TARGET in ["sim", "tsim"]:
 	simulator.clear_stats()
 
+print("===================run funtion=================================")
 f(a_nd, res_nd)
 
 np.testing.assert_equal(res_np, res_nd.numpy())

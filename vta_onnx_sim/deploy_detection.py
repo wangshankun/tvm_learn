@@ -205,8 +205,11 @@ with autotvm.tophub.context(target):
 
     # Start front end compilation
     mod, params = relay.frontend.from_darknet(net, dtype=dtype, shape=dshape)
+    print("===================0.01=")
+    #print(vta.lower(mod, simple_mode=True))
 
     if target.device_name == "vta":
+        print("===================0.1=")
         # Perform quantization in Relay
         # Note: We set opt_level to 3 in order to fold batch norm
         with tvm.transform.PassContext(opt_level=3):
@@ -229,10 +232,14 @@ with autotvm.tophub.context(target):
                 stop_name_idx=pack_dict[MODEL_NAME][3],
             )
     else:
+        print("===================0.2=")
         mod = mod["main"]
 
     # Compile Relay program with AlterOpLayout disabled
-    with vta.build_config(disabled_pass={"AlterOpLayout", "tir.CommonSubexprElimTIR"}):
+    print("===================0.3=")
+    with vta.build_config(debug_flag=1, disabled_pass={"AlterOpLayout", "tir.CommonSubexprElimTIR"}):
+        print("===================0.4=")
+        print("target:",target, " target_host:",env.target_host)
         lib = relay.build(
             mod, target=tvm.target.Target(target, host=env.target_host), params=params
         )

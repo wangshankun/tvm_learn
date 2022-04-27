@@ -22,36 +22,35 @@ assert tvm.runtime.enabled("rpc")
 
 # Load VTA parameters from the 3rdparty/vta-hw/config/vta_config.json file
 env = vta.get_env()
-print_flushed(env.__dict__)
+#print_flushed(env.__dict__)
 # This target is used for cross compilation. You can query it by :code:`gcc -v` on your device.
 # Set ``device=arm_cpu`` to run inference on the CPU
 # or ``device=vta`` to run inference on the FPGA.
 device = "vta"
 target = env.target if device == "vta" else env.target_vta_cpu
 
-# Name of Gluon model to compile
 # The ``start_pack`` and ``stop_pack`` labels indicate where
 # to start and end the graph packing relay pass: in other words
 # where to start and finish offloading to VTA.
-network = "resnet18-v1-7"
-network_onnx = network + ".onnx"
-print_flushed(network_onnx)
+network_name = "resnet18-v1-7"
+network_onnx = network_name + ".onnx"
+input_data_name = "data" 
+start_name = "nn.max_pool2d"
+stop_name = "nn.global_avg_pool2d"
 
 model_url = "https://github.com/onnx/models/raw/main/vision/classification/resnet/model/" + network_onnx
 model_path = download_testdata(model_url, network_onnx, module="onnx")
 onnx_model = onnx.load(model_path)
-start_name = "nn.max_pool2d"
-stop_name = "nn.global_avg_pool2d"
 
 remote = rpc.LocalSession()
 
-print_flushed(env.TARGET)
+#print_flushed(env.TARGET)
 # Get execution context from remote
 ctx = remote.ext_dev(0) if device == "vta" else remote.cpu(0)
 
-graph_path = "./resnet18_onnx.json"
-param_path = "./resnet18_onnx.params"
-so_path = "./resnet18_onnx.so"
+graph_path = "./" + network_name + ".json"
+param_path = "./" + network_name + ".params"
+so_path = "./" + network_name + ".so"
 
 
 if not os.path.exists(graph_path):
@@ -63,7 +62,6 @@ if not os.path.exists(graph_path):
 
         # Get off the shelf gluon model, and convert to relay
         mod, params = relay.frontend.from_onnx(onnx_model, shape_dict)
-
         # Update shape and type dictionary
         shape_dict.update({k: v.shape for k, v in params.items()})
         dtype_dict.update({k: str(v.dtype) for k, v in params.items()})
@@ -91,7 +89,7 @@ if not os.path.exists(graph_path):
                        relay_prog,
                        target=tvm.target.Target(target, host=env.target_host),
                        params=params,
-                       mod_name="resnet18_mod")
+                       mod_name=network_name + "_mod")
 
     graph = intrp.get_executor_config()
     with open(graph_path, 'w') as fo:
@@ -105,7 +103,7 @@ if not os.path.exists(graph_path):
 
 #########################################################################################
 
-print_flushed("resnet18_onnx upload file: ", so_path)
+print_flushed("network_name upload file: ", so_path)
 remote.upload(so_path)
 loaded_lib = remote.load_module(so_path)
 loaded_graph = open(graph_path).read()
@@ -113,7 +111,18 @@ loaded_params = bytearray(open(param_path, "rb").read())
 
 executor = graph_executor.create(loaded_graph, loaded_lib, ctx)
 executor.load_params(loaded_params)
-data = np.random.rand(env.BATCH, 3, 224, 224).astype("float32")
+
+#print(executor.get_input_info())
+
+inp_idx = executor.get_input_index(input_data_name)
+assert inp_idx != -1#assert mode input node name exist
+
+inp_dshapes, inp_dtypes = executor.get_input_info()
+
+inp_shape = inp_dshapes[input_data_name]
+inp_type  = inp_dtypes[input_data_name]
+#data = np.random.rand(env.BATCH, 3, 224, 224).astype("float32")
+data = np.random.rand(*inp_shape).astype(inp_type)
 executor.set_input('data', tvm.nd.array(data))
 
 simulator.clear_stats()
@@ -124,7 +133,6 @@ executor.run()
 ###  so, use executor.run() replace executor.module.time_evaluator. 
 #run_timer = executor.module.time_evaluator("run", ctx, number=1, repeat=1)
 sim_stats = simulator.stats()
-print_flushed(sim_stats)
 print_flushed("execution statistics:")
 for k, v in sim_stats.items():
     print_flushed("\t{:<16}: {:>16}".format(k, v))
