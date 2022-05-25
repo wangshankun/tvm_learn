@@ -1,12 +1,8 @@
-###参考topi的softmax实现，完成reducemean的te开发;
-###tvm\python\tvm\topi\nn\softmax.py
-###
-
-
 from __future__ import absolute_import, print_function
 import tvm
 import numpy as np
 from tvm import relay, te, topi
+import tvm.testing
 
 attr_axis = 1
 attr_keepdims = 1
@@ -23,9 +19,6 @@ k = te.reduce_axis((0, X.shape[attr_axis]), name="k")
 def insert_reduce_index(indices, reduce_index):
     return indices[:attr_axis] + (reduce_index,) + indices[attr_axis:]
 
-def get_non_reduce_indices(indices):
-    return tuple([var for (i, var) in enumerate(indices) if i != attr_axis])
-
 def _compute_sum(*indices):
     eval_range = insert_reduce_index(indices, k)
     return te.sum(X[eval_range], axis=k)
@@ -34,7 +27,6 @@ def _compute_div(Y, *indices):
     return te.div(Y[indices], X.shape[attr_axis])
     
 reduced_shape = tuple([dim for (i, dim) in enumerate(X.shape) if i != attr_axis])
-print(reduced_shape)
 Y = te.compute(reduced_shape, _compute_sum, name="T_reducemean_sum")
 Z = te.compute(reduced_shape, 
                lambda *indices:_compute_div(Y, *indices), 
@@ -42,7 +34,6 @@ Z = te.compute(reduced_shape,
 
 if attr_keepdims == 1:
     out_shape = reduced_shape[:attr_axis] + (1,) + reduced_shape[attr_axis:]
-    print(out_shape)
     Z = topi.reshape(Z, out_shape)
 
 s = te.create_schedule(Z.op)
@@ -70,3 +61,8 @@ print("input data")
 print(a.numpy())
 print("output data")
 print(b.numpy())
+#https://github.com/onnx/onnx/blob/main/docs/Operators.md#ReduceMean
+c = np.mean(a.numpy(), axis=attr_axis, keepdims=attr_keepdims == 1)
+tvm.testing.assert_allclose(c,  b.numpy(),  rtol=1e-5)
+print("verfiy data")
+print(c)
